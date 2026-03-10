@@ -2,9 +2,7 @@ package com.can.core;
 
 import java.io.Serializable;
 
-// lightweight struct holding what we know about a neighbor
-// zone here is a snapshot -- it can get stale if the neighbor splits
-// but routing table updates should keep it mostly fresh
+// lightweight struct holding what a node knows about a neighbor
 public class NodeInfo implements Serializable {
 
     private static final long serialVersionUID = 1L;

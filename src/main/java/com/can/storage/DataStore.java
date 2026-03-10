@@ -4,23 +4,15 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
-/**
- * Key-value store for a single node.
- *
- * Each node only stores keys whose hash lands in its zone. When the zone
- * shrinks (new neighbor takes half), we extract and transfer the relevant entries.
- *
- * Added versioning so we don't accidentally overwrite newer data with older data
- * during zone transfers. Versions are per-key and monotonically increase.
- *
- * TTL support is there but honestly for the simulation i mostly use NO_TTL.
- * Lazy eviction (check on get) + periodic sweep should be fine.
+/*
+  Key-value store for a single node.
+ 
+  Each node only stores keys whose hash lands in its zone. When the zone shrinks extract and transfer the relevant entries.
  */
 public class DataStore {
 
     public static final long NO_TTL = -1;
 
-    // -------------------------------------------------------------------------
     // inner class for stored entries
 
     public static class Entry {
@@ -31,7 +23,7 @@ public class DataStore {
         public final String storedBy; // which node stored this originally
 
         Entry(byte[] value, long ttlMs, long version, String storedBy) {
-            this.value    = Arrays.copyOf(value, value.length); // don't want external mutation
+            this.value    = Arrays.copyOf(value, value.length); 
             this.storedAt = System.currentTimeMillis();
             this.ttlMs    = ttlMs;
             this.version  = version;
@@ -47,15 +39,12 @@ public class DataStore {
             return System.currentTimeMillis() - storedAt > ttlMs;
         }
 
-        // old naming -- keeping both so i don't break things
-        // TODO: pick one and stick with it
         public long getVersion()  { return version; }
         public String getOwner()  { return storedBy; }
         public long getStoredAt() { return storedAt; }
         public long getTtlMs()    { return ttlMs; }
     }
 
-    // -------------------------------------------------------------------------
 
     private final ConcurrentHashMap<String, Entry> data     = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long>  versions = new ConcurrentHashMap<>();
@@ -66,7 +55,6 @@ public class DataStore {
     private long hits   = 0;
     private long misses = 0;
 
-    // -------------------------------------------------------------------------
 
     // returns true if the entry was actually stored (false = rejected due to version)
     public synchronized boolean put(String key, byte[] value, String nodeId) {
@@ -80,7 +68,6 @@ public class DataStore {
         Entry existing = data.get(key);
 
         if (existing != null && !existing.isExpired() && existing.version >= nextVersion) {
-            // shouldn't happen often but want to be safe
             return false;
         }
 
@@ -101,7 +88,6 @@ public class DataStore {
         return e;
     }
 
-    // alias for the old API -- remove eventually
     public Entry getEntry(String key) { return get(key); }
 
     public boolean remove(String key) {
@@ -112,7 +98,7 @@ public class DataStore {
         return get(key) != null;
     }
 
-    // snapshot of all live entries -- used when we leave and need to hand off data
+    // snapshot of all live entries -- used when node leaves and needs to hand off data
     public synchronized Map<String, Entry> snapshot() {
         Map<String, Entry> out = new HashMap<>();
         for (Map.Entry<String, Entry> e : data.entrySet()) {
@@ -122,10 +108,6 @@ public class DataStore {
         return out;
     }
 
-    /**
-     * Pull out all entries matching predicate (and remove them from this store).
-     * Called during zone splits -- new node calls this to grab its entries.
-     */
     public synchronized Map<String, Entry> extractIf(Predicate<String> keyPredicate) {
         Map<String, Entry> transferred = new HashMap<>();
         Iterator<Map.Entry<String, Entry>> it = data.entrySet().iterator();
@@ -139,7 +121,7 @@ public class DataStore {
         return transferred;
     }
 
-    // alias -- CANNode uses extractEntriesForTransfer in some places, fixing later
+    // CANNode uses extractEntriesForTransfer in some places,
     public Map<String, Entry> extractEntriesForTransfer(Predicate<String> p) {
         return extractIf(p);
     }
@@ -154,7 +136,7 @@ public class DataStore {
         }
     }
 
-    // returns number of evicted entries (run periodically)
+    // returns number of evicted entries 
     public int evictExpired() {
         int count = 0;
         Iterator<Map.Entry<String, Entry>> it = data.entrySet().iterator();

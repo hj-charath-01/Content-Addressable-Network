@@ -4,19 +4,11 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Random;
 
-/**
- * A hyper-rectangle (zone) in d-dimensional space.
- *
- * Each node "owns" one zone. The collection of all zones should tile the
- * entire [0,1)^d space with no overlaps or gaps. When a new node joins,
- * the target zone gets split in half and the new node takes one piece.
- *
- * See section 3.1 of the CAN paper for the full description.
- * My implementation follows the basic approach but I split along the longest
- * dimension instead of alternating -- advisor said this keeps zones more
- * square-ish which helps routing in practice.
- *
- * NOTE: "low" is inclusive, "high" is exclusive (like python ranges)
+/*
+  A hyper-rectangle (zone) in d-dimensional space.
+ 
+  Each node "owns" one zone. The collection of all zones should tile the entire [0,1)^d space with no overlaps or gaps. 
+  When a new node joins, the target zone gets split in half and the new node takes one piece.
  */
 public class Zone implements Serializable {
 
@@ -31,17 +23,16 @@ public class Zone implements Serializable {
             throw new IllegalArgumentException("low and high must have same length");
 
         this.dims = low.length;
-        this.low  = Arrays.copyOf(low, dims);
+        this.low  = Arrays.copyOf(low,  dims);
         this.high = Arrays.copyOf(high, dims);
 
         for (int i = 0; i < dims; i++) {
             if (low[i] >= high[i])
-                throw new IllegalArgumentException(
-                    "invalid zone: low[" + i + "]=" + low[i] + " >= high[" + i + "]=" + high[i]);
+                throw new IllegalArgumentException( "invalid zone: low[" + i + "]=" + low[i] + " >= high[" + i + "]=" + high[i]);
         }
     }
 
-    // helper to create the initial full [0,1)^d zone for the bootstrap node
+    // The initial full [0,1)^d zone for the bootstrap node. 
     public static Zone fullSpace(int dimensions) {
         double[] lo = new double[dimensions];
         double[] hi = new double[dimensions];
@@ -58,29 +49,28 @@ public class Zone implements Serializable {
         return true;
     }
 
-    // split along a specific dimension, returns [lower_half, upper_half]
+    // Split along a specific dimension; returns [lower_half, upper_half]. 
     public Zone[] split(int dim) {
         double mid = (low[dim] + high[dim]) / 2.0;
 
-        double[] lo1 = Arrays.copyOf(low, dims);
+        double[] lo1 = Arrays.copyOf(low,  dims);
         double[] hi1 = Arrays.copyOf(high, dims);
         hi1[dim] = mid;
 
-        double[] lo2 = Arrays.copyOf(low, dims);
+        double[] lo2 = Arrays.copyOf(low,  dims);
         double[] hi2 = Arrays.copyOf(high, dims);
         lo2[dim] = mid;
 
         return new Zone[]{ new Zone(lo1, hi1), new Zone(lo2, hi2) };
     }
 
-    // split along whichever dimension is longest
-    // this is better than round-robin splitting (tried both, this gives ~15% better hop counts)
+    // Split along the longest dimension. 
     public Zone[] splitLongest() {
         return split(longestDim());
     }
 
     public int longestDim() {
-        int best = 0;
+        int    best    = 0;
         double bestLen = -1;
         for (int i = 0; i < dims; i++) {
             double len = high[i] - low[i];
@@ -103,54 +93,58 @@ public class Zone implements Serializable {
         return new Point(p);
     }
 
-    // minimum distance from point p to the boundary of this zone
-    // returns 0 if p is inside -- used for greedy routing
+    /*
+      Minimum distance from point p to the boundary of this zone.
+      Returns 0 if p is inside — used for greedy routing.
+     */
     public double minDistanceTo(Point p) {
         double sum = 0;
         for (int i = 0; i < dims; i++) {
             double v = p.get(i);
             double delta = 0;
-            if (v < low[i])       delta = low[i] - v;
+            if (v < low[i])        delta = low[i]  - v;
             else if (v >= high[i]) delta = v - high[i];
             sum += delta * delta;
         }
         return Math.sqrt(sum);
     }
 
-    /**
-     * Two zones are "adjacent" if they share exactly one face.
-     * Geometrically: touch in exactly 1 dimension, overlap in all others.
-     *
-     * This was surprisingly annoying to get right with floating point.
-     * The epsilon (1e-9) covers accumulated error from repeated splits.
-     * Might need to increase it if we ever do a LOT of splits... probably fine for now.
-     *
-     * TODO: write a proper unit test for this, i've been eyeballing it
+    /*
+      Two zones are "adjacent" if and only if they share exactly one COMPLETE
+      face — meaning they can be cleanly merged into a single rectangle with no gaps and no overlap with any third zone.
+     
+      Conditions:
+        - Exactly 1 dimension where the boundaries touch (the split axis).
+        - All other (dims-1) dimensions have IDENTICAL extents: same low AND same high (within floating-point epsilon).
+     
      */
     public boolean isAdjacentTo(Zone other) {
-        int touching  = 0;
-        int overlapping = 0;
+        int touching   = 0;
+        int exactMatch = 0;
 
         for (int i = 0; i < dims; i++) {
             boolean touch =
-                Math.abs(this.high[i] - other.low[i]) < 1e-9 ||
-                Math.abs(other.high[i] - this.low[i]) < 1e-9;
-            boolean overlap =
-                this.low[i] < other.high[i] && other.low[i] < this.high[i];
+                Math.abs(this.high[i] - other.low[i])  < 1e-9 ||
+                Math.abs(other.high[i] - this.low[i])  < 1e-9;
 
-            if (touch)   touching++;
-            if (overlap) overlapping++;
+            boolean exact =
+                Math.abs(this.low[i]  - other.low[i])  < 1e-9 &&
+                Math.abs(this.high[i] - other.high[i]) < 1e-9;
+
+            if (touch) touching++;
+            if (exact) exactMatch++;
         }
 
-        return touching == 1 && overlapping == dims - 1;
+        // Valid merge partner: 1 touching dimension, all others identical.
+        return touching == 1 && exactMatch == dims - 1;
     }
 
-    // merge with an adjacent zone. assumes caller has verified adjacency
+    // Merge with an adjacent zone.
     public Zone merge(Zone other) {
         double[] lo = new double[dims];
         double[] hi = new double[dims];
         for (int i = 0; i < dims; i++) {
-            lo[i] = Math.min(this.low[i], other.low[i]);
+            lo[i] = Math.min(this.low[i],  other.low[i]);
             hi[i] = Math.max(this.high[i], other.high[i]);
         }
         return new Zone(lo, hi);

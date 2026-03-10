@@ -8,16 +8,8 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Messages passed between nodes.
- *
- * I originally had a class hierarchy (StoreRequest extends Message, etc) but
- * serializing polymorphic types over sockets was getting annoying so i switched
- * to a single class with a type field and nullable payload fields. Not the
- * prettiest design but it works and is easy to debug.
- *
- * hopCount is incremented at each routing step -- useful for measuring
- * actual vs theoretical hop counts.
+/*
+  Messages passed between nodes.
  */
 public class Message implements Serializable {
 
@@ -32,7 +24,7 @@ public class Message implements Serializable {
     }
 
     // always present
-    private final String id;        // for dedup, not really used yet
+    private final String id;        
     private final Type   type;
     private final String senderId;
     private int hopCount = 0;
@@ -63,7 +55,7 @@ public class Message implements Serializable {
         this.senderId = senderId;
     }
 
-    // -- factories -------------------------------------------------------------
+    // factories 
 
     public static Message joinRequest(String from, Point p) {
         Message m = new Message(Type.JOIN_REQUEST, from);
@@ -125,7 +117,7 @@ public class Message implements Serializable {
     public static Message heartbeat(String from)    { return new Message(Type.HEARTBEAT, from); }
     public static Message heartbeatAck(String from) { return new Message(Type.HEARTBEAT_ACK, from); }
 
-    // -- accessors -------------------------------------------------------------
+    // accessors 
 
     public Type           getType()               { return type; }
     public String         getSenderId()           { return senderId; }

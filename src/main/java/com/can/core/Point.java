@@ -4,14 +4,13 @@ import java.io.Serializable;
 import java.util.Arrays;
 
 // represents a coordinate in the d-dimensional keyspace
-// based on the original CAN paper (Ratnasamy et al. 2001) which uses a unit torus
-// i.e. each dimension wraps around at 1.0 back to 0.0
+// each dimension wraps around at 1.0 back to 0.0
 public class Point implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     private final double[] coords;
-    private final int d; // number of dimensions, keeping it short since i type this a lot
+    private final int d; // number of dimensions
 
     public Point(double... coordinates) {
         this.coords = Arrays.copyOf(coordinates, coordinates.length);
@@ -26,8 +25,7 @@ public class Point implements Serializable {
         return d;
     }
 
-    // euclidean distance but accounting for torus wrap-around
-    // spent like 2 hours debugging routing before i remembered this needs the min(d, 1-d) trick
+    // euclidean distance but accounting for wrap-around
     public double distanceTo(Point other) {
         if (other.d != this.d)
             throw new IllegalArgumentException("can't compare points with different dims (" + d + " vs " + other.d + ")");

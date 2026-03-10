@@ -6,19 +6,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-/**
- * Maps keys to points in the d-dimensional keyspace using SHA-256.
- *
- * Basic idea: hash the key, slice the digest into d equal chunks,
- * normalize each chunk to [0,1). Works fine up to d=8 since SHA-256
- * gives 32 bytes and we use 4 bytes per dimension.
- *
- * I briefly tried MD5 (faster, 16 bytes) but SHA-256 gives better
- * distribution in my experiments. Probably doesn't matter much but
- * figured I'd use the "real" hash.
- *
- * ref: Ratnasamy et al. section 3 -- they don't specify the hash function,
- * just say "a standard hash function"
+/*
+  Maps keys to points in the d-dimensional keyspace using SHA-256.
+ 
+  Basic idea: hash the key, slice the digest into d equal chunks, normalize each chunk to [0,1).
+
  */
 public class HashUtil {
 
@@ -37,7 +29,7 @@ public class HashUtil {
 
     private static Point toPoint(byte[] digest, int dims) {
         double[] coords = new double[dims];
-        // 4 bytes per dimension = 32-bit resolution, good enough
+        // 4 bytes per dimension = 32-bit resolution
         int bytesPerDim = Math.max(1, digest.length / dims);
 
         for (int d = 0; d < dims; d++) {
@@ -56,7 +48,7 @@ public class HashUtil {
         try {
             return MessageDigest.getInstance("SHA-256").digest(data);
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e); // never happens
+            throw new RuntimeException(e); 
         }
     }
 

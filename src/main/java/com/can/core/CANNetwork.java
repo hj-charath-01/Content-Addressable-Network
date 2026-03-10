@@ -7,17 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
-/**
- * Top-level class for creating and interacting with a CAN.
- *
- * Manages the shared overlay (the in-memory stand-in for actual networking)
- * and exposes store/lookup at the network level so callers don't need
- * to pick a specific node.
- *
- * In a real deployment each CANNode would be its own process. Here they're
- * all in the same JVM talking through the overlay map -- good enough for
- * simulation and testing.
- */
+
 public class CANNetwork {
 
     private static final Logger log = Logger.getLogger(CANNetwork.class.getName());
@@ -30,9 +20,9 @@ public class CANNetwork {
         this.dims = dims;
     }
 
-    /**
-     * Create the first node. It starts owning the entire keyspace.
-     * Must be called before addNode().
+    /*
+      Create the first node. It starts owning the entire keyspace.
+      Must be called before addNode().
      */
     public CANNode bootstrap(String nodeId) {
         CANNode n = new CANNode(nodeId, "localhost", nextPort(), dims, Zone.fullSpace(dims), overlay);
@@ -40,9 +30,9 @@ public class CANNetwork {
         return n;
     }
 
-    /**
-     * Add a node with an auto-generated ID.
-     * Caller needs to specify which existing node to use as the bootstrap contact.
+    /*
+      Add a node with an auto-generated ID.
+      While running program, need to specify which existing node to use as the bootstrap contact.
      */
     public CANNode addNode(String bootstrapId) {
         String id = "n" + seq.incrementAndGet();
@@ -61,7 +51,7 @@ public class CANNetwork {
         return n;
     }
 
-    // ---- network-level ops ---------------------------------------------------
+    // network-level ops 
 
     // store via a random node (any entry point is fine -- routing handles the rest)
     public boolean store(String key, String value) {
@@ -79,12 +69,10 @@ public class CANNetwork {
     // useful for debugging -- shows which node "should" own a given key
     public Optional<CANNode> responsibleNode(String key) {
         Point p = HashUtil.hashKey(key, dims);
-        return overlay.values().stream()
-                .filter(n -> n.getZone().contains(p))
-                .findFirst();
+        return overlay.values().stream() .filter(n -> n.getZone().contains(p)) .findFirst();
     }
 
-    // ---- accessors -----------------------------------------------------------
+    // accessors 
 
     public CANNode       getNode(String id) { return overlay.get(id); }
     public int           size()             { return overlay.size(); }
@@ -99,7 +87,7 @@ public class CANNetwork {
         return 9000 + seq.incrementAndGet();
     }
 
-    // ---- diagnostics ---------------------------------------------------------
+    // diagnostics 
 
     public void printSummary() {
         System.out.println("\n--- network summary (" + dims + "D, " + overlay.size() + " nodes) ---");
@@ -108,22 +96,18 @@ public class CANNetwork {
         sorted.sort(Comparator.comparing(CANNode::getNodeId));
         for (CANNode n : sorted) {
             totalVol += n.getZone().volume();
-            System.out.printf("  %-12s  %s  nbrs=%d  data=%d%n",
-                n.getNodeId(), n.getZone(), n.getRoutingTable().size(), n.getDataStore().size());
+            System.out.printf("  %-12s  %s  nbrs=%d  data=%d%n", n.getNodeId(), n.getZone(), n.getRoutingTable().size(), n.getDataStore().size());
         }
         System.out.printf("  total coverage: %.6f%n", totalVol); // should be ~1.0
         System.out.println();
     }
 
-    /**
-     * Sanity check: sample random points and verify exactly one node owns each.
-     * Run this after any structural change (join/leave) to catch bugs.
-     * Returns true if >= 99% of points have exactly one owner.
-     */
+    
+    //Returns true if >= 99% of points have exactly one owner.
     public boolean verifyPartitioning() {
         int N = 2000;
         int ok = 0;
-        Random rng = new Random(42); // fixed seed so results are reproducible
+        Random rng = new Random(42);
         for (int i = 0; i < N; i++) {
             double[] c = new double[dims];
             for (int d = 0; d < dims; d++) c[d] = rng.nextDouble();
