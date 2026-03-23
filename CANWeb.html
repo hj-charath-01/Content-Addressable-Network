@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CAN Network Simulator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@700;800&display=swap');
+:root{--bg:#080c14;--surface:#0d1321;--surface2:#111827;--border:#1e2d45;--accent:#00e5ff;--green:#39ff14;--orange:#ff6b35;--red:#ff3b5c;--yellow:#ffd166;--text:#c8d6e8;--muted:#4a6080;--mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#topbar{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.logo{font-family:var(--sans);font-weight:800;font-size:18px;color:var(--accent);letter-spacing:-0.5px}
+.logo span{color:var(--muted);font-weight:400}
+#network-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:auto}
+#status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .3s}
+#status-dot.alive{background:var(--green);box-shadow:0 0 6px var(--green)}
+#main{display:flex;flex:1;overflow:hidden}
+#canvas-panel{width:520px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--surface)}
+#canvas-header{padding:10px 14px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+#canvas-header span{color:var(--accent);font-weight:600}
+#canvas-info{padding:8px 14px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);min-height:32px;background:var(--bg)}
+#right-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#console-wrap{flex:1;overflow-y:auto;padding:12px 16px;background:var(--bg);font-size:12px;line-height:1.7;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+#console-wrap::-webkit-scrollbar{width:4px}
+#console-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.log-line{display:flex;gap:8px;animation:fadeIn .15s ease}
+.log-ts{color:var(--muted);flex-shrink:0}
+.log-cmd{color:var(--accent)}.log-ok{color:var(--green)}.log-err{color:var(--red)}
+.log-info{color:var(--text)}.log-warn{color:var(--yellow)}
+.log-head{color:var(--accent);font-weight:600;border-bottom:1px solid var(--border);padding-bottom:2px;margin-top:4px}
+.log-data{color:#8ab4f8}.log-hit{color:var(--green)}.log-miss{color:var(--red)}
+#action-bar{padding:10px 14px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
+.btn{font-family:var(--mono);font-size:11px;font-weight:600;padding:5px 12px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{border-color:var(--accent);color:var(--accent)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.success{border-color:var(--green);color:var(--green)}
+.btn.warn{border-color:var(--yellow);color:var(--yellow)}
+.btn-sep{width:1px;background:var(--border);margin:0 2px}
+#modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(3px);z-index:100;align-items:center;justify-content:center}
+#modal-overlay.show{display:flex}
+#modal{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:380px;max-width:480px;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+#modal h3{font-family:var(--sans);font-size:15px;font-weight:700;color:var(--accent);margin-bottom:16px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.field input,.field textarea,.field select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 10px;border-radius:4px;outline:none;transition:border-color .15s}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:80px}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+#legend{padding:8px 14px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;background:var(--bg);font-size:11px;max-height:72px;overflow-y:auto}
+.legend-item{display:flex;align-items:center;gap:5px;color:var(--text);cursor:pointer}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+#tooltip{position:fixed;background:var(--surface);border:1px solid var(--accent);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--text);pointer-events:none;z-index:50;display:none;max-width:260px;line-height:1.6}
+#tooltip .tt-title{color:var(--accent);font-weight:600;margin-bottom:3px}
+@keyframes fadeIn{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="logo">CAN<span>/</span>Sim</div>
+  <div style="font-size:11px;color:var(--muted)">Content Addressable Network — 2D Interactive Simulator</div>
+  <div id="network-status"><div id="status-dot"></div><span id="status-text">No network</span></div>
+  <button class="btn primary" onclick="showBootstrap()">⊕ Bootstrap New Network</button>
+</div>
+<div id="main">
+  <div id="canvas-panel">
+    <div id="canvas-header"><span>ZONE GRID</span><div id="dim-label" style="color:var(--muted)">— no network —</div></div>
+    <canvas id="zone-canvas" width="518" height="442"></canvas>
+    <div id="canvas-info">hover over a zone for details · click to select</div>
+    <div id="legend"></div>
+  </div>
+  <div id="right-panel">
+    <div id="console-wrap"><div id="console-log"></div></div>
+    <div id="action-bar">
+      <button class="btn success" onclick="showAddNode()">＋ Node</button>
+      <button class="btn success" onclick="showAddMultiple()">＋ Multi</button>
+      <button class="btn danger" onclick="showRemoveNode()">− Remove</button>
+      <div class="btn-sep"></div>
+      <button class="btn" onclick="showStore()">⬆ Store</button>
+      <button class="btn" onclick="showBatchStore()">⬆ Batch</button>
+      <button class="btn primary" onclick="showLookup()">⬇ Lookup</button>
+      <button class="btn primary" onclick="showBatchLookup()">⬇ Batch</button>
+      <div class="btn-sep"></div>
+      <button class="btn" onclick="doSummary()">◈ Summary</button>
+      <button class="btn" onclick="doPartition()">◉ Partition</button>
+      <button class="btn" onclick="doMetrics()">≋ Metrics</button>
+      <button class="btn" onclick="showHashMap()">⌘ Hash Map</button>
+      <div class="btn-sep"></div>
+      <button class="btn warn" onclick="clearConsole()">✕ Clear</button>
+    </div>
+  </div>
+</div>
+<div id="tooltip"><div class="tt-title" id="tt-title"></div><div id="tt-body"></div></div>
+<div id="modal-overlay">
+  <div id="modal">
+    <h3 id="modal-title">Action</h3>
+    <div id="modal-body"></div>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="modal-ok" onclick="modalConfirm()">OK</button>
+    </div>
+  </div>
+</div>
+<script>
+// ── PALETTE ──
+const PALETTE=['#00e5ff','#39ff14','#ff6b35','#ffd166','#c77dff','#ff3b5c','#06d6a0','#ff9f1c','#4895ef','#f72585','#b5e48c','#ffb703','#8338ec','#3a86ff','#fb5607'];
+let pi=0; const NC={};
+function nc(id){if(!NC[id])NC[id]=PALETTE[pi++%PALETTE.length];return NC[id];}
+function hexRgb(h){return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)};}
+
+// ── SHA256 ──
+async function sha256b(s){const e=new TextEncoder();const b=await crypto.subtle.digest('SHA-256',e.encode(s));return new Uint8Array(b);}
+async function sha256h(s){const b=await sha256b(s);return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function hashKey(k,d=2){const dig=await sha256b(k);const bpd=Math.max(1,Math.floor(dig.length/d));const c=[];for(let i=0;i<d;i++){let v=0;const s=(i*bpd)%dig.length;for(let b=0;b<bpd;b++)v=((v*256)+dig[(s+b)%dig.length])>>>0;c.push(v/4294967296);}return c;}
+
+// ── ZONE ──
+class Zone{
+  constructor(l,h){this.l=[...l];this.h=[...h];this.d=l.length;}
+  static full(d){return new Zone(new Array(d).fill(0),new Array(d).fill(1));}
+  has(p){for(let i=0;i<this.d;i++)if(p[i]<this.l[i]||p[i]>=this.h[i])return false;return true;}
+  split(dim){const m=(this.l[dim]+this.h[dim])/2;const l1=[...this.l],h1=[...this.h],l2=[...this.l],h2=[...this.h];h1[dim]=m;l2[dim]=m;return[new Zone(l1,h1),new Zone(l2,h2)];}
+  longest(){let b=0,bl=-1;for(let i=0;i<this.d;i++){const x=this.h[i]-this.l[i];if(x>bl){bl=x;b=i;}}return b;}
+  splitL(){return this.split(this.longest());}
+  vol(){let v=1;for(let i=0;i<this.d;i++)v*=this.h[i]-this.l[i];return v;}
+  dist(p){let s=0;for(let i=0;i<this.d;i++){let d=0;if(p[i]<this.l[i])d=this.l[i]-p[i];else if(p[i]>=this.h[i])d=p[i]-this.h[i];s+=d*d;}return Math.sqrt(s);}
+  adj(o){let t=0,e=0;for(let i=0;i<this.d;i++){const tk=Math.abs(this.h[i]-o.l[i])<1e-9||Math.abs(o.h[i]-this.l[i])<1e-9;const ex=Math.abs(this.l[i]-o.l[i])<1e-9&&Math.abs(this.h[i]-o.h[i])<1e-9;if(tk)t++;if(ex)e++;}return t===1&&e===this.d-1;}
+  merge(o){const l=[],h=[];for(let i=0;i<this.d;i++){l.push(Math.min(this.l[i],o.l[i]));h.push(Math.max(this.h[i],o.h[i]));}return new Zone(l,h);}
+  cen(){return this.l.map((l,i)=>(l+this.h[i])/2);}
+  rand(){return this.l.map((l,i)=>l+Math.random()*(this.h[i]-l));}
+  str(){return this.l.map((l,i)=>`[${l.toFixed(3)},${this.h[i].toFixed(3)})`).join(' x ');}
+}
+
+// ── DATA STORE ──
+class DS{
+  constructor(){this.data=new Map();this.ver=new Map();}
+  put(k,v,by){const n=(this.ver.get(k)||0)+1;const ex=this.data.get(k);if(ex&&ex.v>=n)return false;this.data.set(k,{val:v,v:n,by,at:Date.now()});this.ver.set(k,n);return true;}
+  get(k){return this.data.get(k)||null;}
+  size(){return this.data.size;}
+  snap(){const o=new Map();this.data.forEach((v,k)=>o.set(k,{...v}));return o;}
+  extractIf(f){const o=new Map();for(const[k,v]of this.data)if(f(k)){o.set(k,{...v});this.data.delete(k);}return o;}
+  bulkLoad(m){m.forEach((v,k)=>{this.data.set(k,{...v});this.ver.set(k,v.v);});}
+}
+
+// ── ROUTING TABLE ──
+class RT{
+  constructor(){this.nb=new Map();}
+  add(n){if(n)this.nb.set(n.id,n);}
+  rm(id){this.nb.delete(id);}
+  size(){return this.nb.size;}
+  all(){return[...this.nb.values()];}
+  next(dest,mz){let best=null,bd=mz.dist(dest);for(const n of this.nb.values()){const d=n.zone.dist(dest);if(d<bd){bd=d;best=n;}}return best;}
+  takeover(mz){let best=null,bv=Infinity;for(const n of this.nb.values())if(mz.adj(n.zone)&&n.zone.vol()<bv){bv=n.zone.vol();best=n;}return best;}
+}
+
+// ── CAN NODE ──
+class CANNode{
+  constructor(id,zone,ov){this.id=id;this.zone=zone;this.ov=ov;this.rt=new RT();this.store=new DS();this.sent=0;this.rcvd=0;this.ht=0;this.ro=0;ov.set(id,this);}
+  async join(bid){const b=this.ov.get(bid);if(!b)return false;const p=Zone.full(this.zone.d).rand();const r=b.rj(this.id,p,0);if(!r||!r.ok)return false;this.zone=r.zone;if(r.nb)r.nb.forEach(n=>this.rt.add(n));return true;}
+  rj(nid,p,h){this.rcvd++;if(this.zone.has(p)||h>50)return this.dj(nid,p);const nx=this.rt.next(p,this.zone);if(!nx)return this.dj(nid,p);const nn=this.ov.get(nx.id);if(!nn){this.rt.rm(nx.id);return this.dj(nid,p);}this.sent++;return nn.rj(nid,p,h+1);}
+  dj(nid,p){const[keep,asgn]=this.zone.splitL();const old=this.rt.all();this.zone=keep;const ni={id:nid,zone:asgn};this.rt.add(ni);const mi={id:this.id,zone:keep};old.forEach(nb=>{const n=this.ov.get(nb.id);if(n){n.rt.add(mi);n.rt.add(ni);}});return{ok:true,zone:asgn,nb:[...old,mi]};}
+  async storeKV(k,v){const p=await hashKey(k,this.zone.d);return this.rs(k,v,p,0);}
+  rs(k,v,p,h){this.rcvd++;if(this.zone.has(p)){this.store.put(k,v,this.id);return{ok:true,at:this.id};}if(h>50){this.store.put(k,v,this.id);return{ok:true,at:this.id};}const nx=this.rt.next(p,this.zone);if(!nx){this.store.put(k,v,this.id);return{ok:true,at:this.id};}const nn=this.ov.get(nx.id);if(!nn){this.rt.rm(nx.id);return this.rs(k,v,p,h);}this.ht++;this.ro++;this.sent++;return nn.rs(k,v,p,h+1);}
+  async lookupKV(k){const p=await hashKey(k,this.zone.d);return this.rl(k,p,0);}
+  rl(k,p,h){this.rcvd++;if(this.zone.has(p)){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}if(h>50){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}const nx=this.rt.next(p,this.zone);if(!nx){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}const nn=this.ov.get(nx.id);if(!nn){this.rt.rm(nx.id);return this.rl(k,p,h);}this.ht++;this.ro++;this.sent++;return nn.rl(k,p,h+1);}
+  leave(){const c=this.rt.takeover(this.zone);if(c){const nb=this.ov.get(c.id);if(nb){nb.store.bulkLoad(this.store.snap());nb.zone=this.zone.merge(c.zone);this.rt.all().forEach(n=>{if(n.id!==c.id)nb.rt.add(n);});const ei={id:nb.id,zone:nb.zone};this.rt.all().forEach(n=>{if(n.id===c.id)return;const nn=this.ov.get(n.id);if(nn)nn.rt.add(ei);});}}
+  this.rt.all().forEach(n=>{const nn=this.ov.get(n.id);if(nn)nn.rt.rm(this.id);});this.ov.delete(this.id);return c?c.id:null;}
+  avgH(){return this.ro===0?'0.00':(this.ht/this.ro).toFixed(2);}
+}
+
+// ── NETWORK ──
+class CANNet{
+  constructor(d=2){this.d=d;this.ov=new Map();}
+  boot(id){return new CANNode(id,Zone.full(this.d),this.ov);}
+  async add(id,bid){const n=new CANNode(id,Zone.full(this.d),this.ov);const ok=await n.join(bid);if(!ok){this.ov.delete(id);throw new Error('join failed for '+id);}return n;}
+  async store(k,v){const n=this.any();if(!n)throw new Error('empty');return n.storeKV(k,v);}
+  async lookup(k){const n=this.any();if(!n)return{found:false};return n.lookupKV(k);}
+  async owner(k){const p=await hashKey(k,this.d);for(const[,n]of this.ov)if(n.zone.has(p))return n.id;return'??';}
+  any(){return this.ov.values().next().value||null;}
+  size(){return this.ov.size;}
+  nodes(){return[...this.ov.values()].sort((a,b)=>a.id.localeCompare(b.id));}
+  get(id){return this.ov.get(id)||null;}
+  totalVol(){let v=0;this.ov.forEach(n=>v+=n.zone.vol());return v;}
+  verify(N=1000){let ok=0;for(let i=0;i<N;i++){const p=[];for(let d=0;d<this.d;d++)p.push(Math.random());let owners=0;this.ov.forEach(n=>{if(n.zone.has(p))owners++;});if(owners===1)ok++;}return{ok,N,pct:(100*ok/N).toFixed(1)};}
+}
+
+// ── GLOBAL ──
+let net=null, sel=null, mact=null;
+const CS=518, CH=442;
+
+// ── CONSOLE ──
+function ts(){const d=new Date();return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;}
+function lg(cls,msg){const w=document.getElementById('console-log');const l=document.createElement('div');l.className='log-line';l.innerHTML=`<span class="log-ts">${ts()}</span><span class="${cls}">${msg}</span>`;w.appendChild(l);const cw=document.getElementById('console-wrap');cw.scrollTop=cw.scrollHeight;}
+const LC=(m)=>lg('log-cmd','&gt; '+m);
+const LO=(m)=>lg('log-ok','✓ '+m);
+const LE=(m)=>lg('log-err','✗ '+m);
+const LI=(m)=>lg('log-info','  '+m);
+const LW=(m)=>lg('log-warn','⚠ '+m);
+const LH=(m)=>lg('log-head',m);
+const LD=(m)=>lg('log-data','  '+m);
+const LHIT=(m)=>lg('log-hit','  HIT  '+m);
+const LMISS=(m)=>lg('log-miss','  miss '+m);
+function clearConsole(){document.getElementById('console-log').innerHTML='';LI('console cleared');}
+
+function upStatus(){
+  const dot=document.getElementById('status-dot');
+  const txt=document.getElementById('status-text');
+  if(!net||net.size()===0){dot.className='';txt.textContent='No network';}
+  else{dot.className='alive';txt.textContent=`${net.size()} node${net.size()!==1?'s':''} · ${net.d}D`;}
+  document.getElementById('dim-label').textContent=net?`${net.d}D · ${net.size()} nodes`:'— no network —';
+}
+
+// ── CANVAS ──
+function draw(){
+  const cv=document.getElementById('zone-canvas');
+  const ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,CS,CH);
+  ctx.fillStyle='#080c14';
+  ctx.fillRect(0,0,CS,CH);
+  if(!net||net.size()===0){
+    ctx.fillStyle='#1e2d45';ctx.font='13px JetBrains Mono,monospace';ctx.textAlign='center';
+    ctx.fillText('No network — click "Bootstrap New Network"',CS/2,CH/2);
+    upLegend();upStatus();return;
+  }
+  // grid dots
+  ctx.fillStyle='rgba(30,45,69,0.4)';
+  for(let x=0;x<=CS;x+=CS/8)for(let y=0;y<=CH;y+=CH/8){ctx.beginPath();ctx.arc(x,y,1,0,Math.PI*2);ctx.fill();}
+  net.nodes().forEach(node=>{
+    const col=nc(node.id);
+    const {r,g,b}=hexRgb(col);
+    const x=node.zone.l[0]*CS, y=node.zone.l[1]*CH;
+    const w=(node.zone.h[0]-node.zone.l[0])*CS, h=(node.zone.h[1]-node.zone.l[1])*CH;
+    ctx.fillStyle=`rgba(${r},${g},${b},${sel===node.id?0.22:0.1})`;
+    ctx.fillRect(x+1,y+1,w-2,h-2);
+    ctx.strokeStyle=col;ctx.lineWidth=sel===node.id?2:1;
+    ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    const fs=Math.min(13,Math.max(8,Math.min(w,h)/5));
+    const cx=x+w/2,cy=y+h/2;
+    ctx.font=`600 ${fs}px JetBrains Mono,monospace`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=col;
+    ctx.fillText(node.id,cx,cy-(node.store.size()>0&&fs>9?fs*0.55:0));
+    if(fs>8&&node.store.size()>0){
+      ctx.font=`${Math.max(7,fs-3)}px JetBrains Mono,monospace`;
+      ctx.fillStyle=`rgba(${r},${g},${b},.65)`;
+      ctx.fillText(`${node.store.size()} key${node.store.size()!==1?'s':''}`,cx,cy+(fs>9?fs*0.55:8));
+    }
+  });
+  upLegend();upStatus();
+}
+
+function upLegend(){
+  const leg=document.getElementById('legend');leg.innerHTML='';
+  if(!net)return;
+  net.nodes().forEach(n=>{
+    const it=document.createElement('div');it.className='legend-item';
+    it.innerHTML=`<div class="legend-dot" style="background:${nc(n.id)}"></div>${n.id}<span style="color:var(--muted);margin-left:3px">(${n.store.size()})</span>`;
+    it.onclick=()=>{sel=sel===n.id?null:n.id;draw();};
+    leg.appendChild(it);
+  });
+}
+
+// canvas hover
+document.getElementById('zone-canvas').addEventListener('mousemove',e=>{
+  if(!net)return;
+  const r=e.target.getBoundingClientRect();
+  const cx=(e.clientX-r.left)/CS,cy=(e.clientY-r.top)/CH;
+  let found=null;
+  net.ov.forEach(n=>{if(n.zone.has([cx,cy]))found=n;});
+  const tip=document.getElementById('tooltip');
+  const info=document.getElementById('canvas-info');
+  if(found){
+    document.getElementById('tt-title').textContent=found.id;
+    document.getElementById('tt-body').innerHTML=`zone: ${found.zone.str()}<br>entries: ${found.store.size()}<br>neighbours: ${found.rt.size()}<br>volume: ${(found.zone.vol()*100).toFixed(2)}%<br>sent: ${found.sent} &nbsp;rcvd: ${found.rcvd}`;
+    tip.style.display='block';tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-10)+'px';
+    info.innerHTML=`<b style="color:${nc(found.id)}">${found.id}</b> — ${found.zone.str()} — ${found.store.size()} entries`;
+  }else{tip.style.display='none';info.textContent=`(${cx.toFixed(3)}, ${cy.toFixed(3)}) — hover a zone for details`;}
+});
+document.getElementById('zone-canvas').addEventListener('mouseleave',()=>document.getElementById('tooltip').style.display='none');
+document.getElementById('zone-canvas').addEventListener('click',e=>{
+  if(!net)return;
+  const r=e.target.getBoundingClientRect();
+  const cx=(e.clientX-r.left)/CS,cy=(e.clientY-r.top)/CH;
+  let found=null;
+  net.ov.forEach(n=>{if(n.zone.has([cx,cy]))found=n;});
+  if(!found)return;
+  sel=sel===found.id?null:found.id;draw();
+  if(sel){
+    LC(`selected node ${sel}`);
+    LD(`zone: ${found.zone.str()}`);
+    LD(`entries=${found.store.size()}  neighbours=${found.rt.size()}  avgHops=${found.avgH()}`);
+    if(found.store.size()>0)found.store.data.forEach((v,k)=>LD(`  &nbsp; ${k} = "${v.val}"`));
+  }
+});
+
+// ── MODAL ──
+function showM(title,html,action){
+  document.getElementById('modal-title').textContent=title;
+  document.getElementById('modal-body').innerHTML=html;
+  mact=action;
+  document.getElementById('modal-overlay').classList.add('show');
+  setTimeout(()=>{const i=document.querySelector('#modal-body input,#modal-body textarea');if(i)i.focus();},50);
+}
+function closeModal(){document.getElementById('modal-overlay').classList.remove('show');mact=null;}
+function modalConfirm(){if(mact)mact();}
+document.getElementById('modal-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('modal-overlay'))closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('modal-overlay').classList.contains('show')){if(!document.querySelector('#modal-body textarea:focus'))modalConfirm();}});
+
+function nodeSel(id='bsel'){
+  if(!net)return`<select id="${id}"><option>no network</option></select>`;
+  return`<select id="${id}">${net.nodes().map(n=>`<option>${n.id}</option>`).join('')}</select>`;
+}
+
+// ── ACTIONS ──
+function showBootstrap(){
+  showM('Bootstrap New Network',`
+    <div class="field"><label>Root Node Name</label><input id="mr" value="root" placeholder="root"></div>
+    <div class="field"><label>Dimensions (1–8, use 2 for visualization)</label><input id="md" type="number" min="1" max="8" value="2"></div>
+  `,async()=>{
+    const rn=document.getElementById('mr').value.trim()||'root';
+    const d=Math.max(1,Math.min(8,parseInt(document.getElementById('md').value)||2));
+    net=new CANNet(d);net.boot(rn);
+    pi=0;Object.keys(NC).forEach(k=>delete NC[k]);sel=null;
+    LH('── BOOTSTRAP ──────────────────────');
+    LO(`network created  dims=${d}`);
+    LO(`"${rn}" bootstrapped  zone=${net.get(rn).zone.str()}`);
+    draw();closeModal();
+  });
+}
+
+function showAddNode(){
+  if(!net){LE('bootstrap first');return;}
+  showM('Add Single Node',`
+    <div class="field"><label>Node Name</label><input id="mn" placeholder="alice"></div>
+    <div class="field"><label>Bootstrap Contact</label>${nodeSel()}</div>
+  `,async()=>{
+    const name=document.getElementById('mn').value.trim();
+    const boot=document.getElementById('bsel').value;
+    if(!name){LE('name cannot be empty');return;}
+    if(net.get(name)){LE(`"${name}" already exists`);return;}
+    LC(`add node "${name}" via ${boot}`);
+    try{const n=await net.add(name,boot);LO(`"${name}" joined  zone=${n.zone.str()}`);draw();closeModal();}
+    catch(e){LE(e.message);}
+  });
+}
+
+function showAddMultiple(){
+  if(!net){LE('bootstrap first');return;}
+  showM('Add Multiple Nodes',`
+    <div class="field"><label>Names (comma-separated)</label><input id="mns" placeholder="alice, bob, carol"></div>
+    <div class="field"><label>Bootstrap Contact</label>${nodeSel()}</div>
+  `,async()=>{
+    const names=document.getElementById('mns').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const boot=document.getElementById('bsel').value;
+    if(!names.length){LE('no names entered');return;}
+    LC(`add [${names.join(', ')}] via ${boot}`);closeModal();
+    for(const name of names){
+      if(net.get(name)){LW(`"${name}" already exists — skipped`);continue;}
+      try{const n=await net.add(name,boot);LO(`"${name}"  zone=${n.zone.str()}`);draw();await new Promise(r=>setTimeout(r,30));}
+      catch(e){LE(`"${name}": ${e.message}`);}
+    }
+    draw();
+  });
+}
+
+function showRemoveNode(){
+  if(!net){LE('no network');return;}
+  if(net.size()<=1){LE('cannot remove last node');return;}
+  showM('Remove Node (Graceful Leave)',`
+    <div class="field"><label>Node to Remove</label>${nodeSel('rsel')}</div>
+  `,()=>{
+    const id=document.getElementById('rsel').value;
+    const node=net.get(id);if(!node){LE(`"${id}" not found`);return;}
+    LC(`remove "${id}"`);
+    LD(`zone: ${node.zone.str()}`);
+    LD(`transferring ${node.store.size()} entries...`);
+    const took=node.leave();
+    if(took)LO(`zone absorbed by "${took}"`);
+    else LW('no adjacent candidate — some data may be lost');
+    LO(`network size: ${net.size()}`);
+    if(sel===id)sel=null;
+    draw();closeModal();
+  });
+}
+
+function showStore(){
+  if(!net){LE('no network');return;}
+  showM('Store Key / Value',`
+    <div class="field"><label>Key</label><input id="mk" placeholder="user:101"></div>
+    <div class="field"><label>Value</label><input id="mv" placeholder="alice@example.com"></div>
+  `,async()=>{
+    const k=document.getElementById('mk').value.trim();
+    const v=document.getElementById('mv').value.trim();
+    if(!k){LE('key cannot be empty');return;}
+    LC(`store  ${k} = "${v}"`);
+    const res=await net.store(k,v);
+    const hex=(await sha256h(k)).substring(0,16)+'...';
+    const p=await hashKey(k,net.d);
+    LO(`stored at "${res.at}"`);
+    LD(`sha256=${hex}  coord=(${p.map(x=>x.toFixed(4)).join(', ')})`);
+    draw();closeModal();
+  });
+}
+
+function showBatchStore(){
+  if(!net){LE('no network');return;}
+  showM('Batch Store',`
+    <div class="field"><label>key=value pairs, one per line</label>
+    <textarea id="mbatch" placeholder="user:101=alice@example.com&#10;config:db=postgres://prod:5432&#10;session:xyz=uid=42&amp;ttl=3600"></textarea></div>
+  `,async()=>{
+    const lines=document.getElementById('mbatch').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(!lines.length){LE('nothing to store');return;}
+    LC(`batch store — ${lines.length} pairs`);closeModal();
+    for(const line of lines){
+      const eq=line.indexOf('=');if(eq<1){LE(`bad format: "${line}"`);continue;}
+      const k=line.substring(0,eq).trim(),v=line.substring(eq+1).trim();
+      const res=await net.store(k,v);
+      LD(`${k.padEnd(22)} → ${res.at.padEnd(12)} ok`);
+      await new Promise(r=>setTimeout(r,15));
+    }
+    draw();
+  });
+}
+
+function showLookup(){
+  if(!net){LE('no network');return;}
+  showM('Lookup Key',`
+    <div class="field"><label>Key</label><input id="mlk" placeholder="user:101"></div>
+  `,async()=>{
+    const k=document.getElementById('mlk').value.trim();
+    if(!k){LE('key cannot be empty');return;}
+    LC(`lookup  ${k}`);
+    const res=await net.lookup(k);
+    if(res.found)LHIT(`${k.padEnd(22)} = "${res.val}"  (found at ${res.at})`);
+    else LMISS(k);
+    closeModal();
+  });
+}
+
+function showBatchLookup(){
+  if(!net){LE('no network');return;}
+  showM('Batch Lookup',`
+    <div class="field"><label>Keys, one per line</label>
+    <textarea id="mblk" placeholder="user:101&#10;config:db&#10;nonexistent"></textarea></div>
+  `,async()=>{
+    const keys=document.getElementById('mblk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(!keys.length){LE('no keys');return;}
+    LC(`batch lookup — ${keys.length} keys`);closeModal();
+    let hits=0,miss=0;
+    for(const k of keys){
+      const res=await net.lookup(k);
+      if(res.found){LHIT(`${k.padEnd(22)} = "${res.val}"`);hits++;}
+      else{LMISS(k.padEnd(22));miss++;}
+      await new Promise(r=>setTimeout(r,15));
+    }
+    LD(`${hits} hit${hits!==1?'s':''}, ${miss} miss${miss!==1?'es':''}`);
+  });
+}
+
+function doSummary(){
+  if(!net){LE('no network');return;}
+  LH('── NETWORK SUMMARY ────────────────');
+  LD(`${net.d}D  ·  ${net.size()} nodes`);
+  net.nodes().forEach(n=>LD(`${n.id.padEnd(14)} ${n.zone.str().padEnd(36)} nbrs=${n.rt.size()} data=${n.store.size()}`));
+  const v=net.totalVol();
+  const ok=Math.abs(v-1)<0.0001;
+  lg(ok?'log-ok':'log-err',`  total coverage: ${v.toFixed(6)}${ok?' ✓':' ✗ overlap or gap detected'}`);
+}
+
+function doPartition(){
+  if(!net){LE('no network');return;}
+  LC('verify partitioning (1000 random points)');
+  const{ok,N,pct}=net.verify(1000);
+  const pass=parseFloat(pct)>=99;
+  if(pass)LO(`partitioning: ${ok}/${N} ok (${pct}%)  PASS`);
+  else LE(`partitioning: ${ok}/${N} ok (${pct}%)  FAILED — zone overlap or gap detected`);
+}
+
+function doMetrics(){
+  if(!net){LE('no network');return;}
+  LH('── NODE METRICS ───────────────────');
+  net.nodes().forEach(n=>LD(`${n.id.padEnd(12)} zone=${n.zone.str().padEnd(30)} nbrs=${n.rt.size()} entries=${n.store.size()} sent=${n.sent} rcvd=${n.rcvd} avgHops=${n.avgH()}`));
+}
+
+function showHashMap(){
+  if(!net){LE('no network');return;}
+  showM('Key → Coordinate Mapping',`
+    <div class="field"><label>Keys to hash, one per line</label>
+    <textarea id="mhk" placeholder="user:101&#10;config:db&#10;session:xyz"></textarea></div>
+  `,async()=>{
+    const keys=document.getElementById('mhk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(!keys.length){LE('no keys');return;}
+    LC(`hash map — ${keys.length} keys`);closeModal();
+    for(const k of keys){
+      const hex=(await sha256h(k)).substring(0,16)+'...';
+      const p=await hashKey(k,net.d);
+      const owner=await net.owner(k);
+      LD(`${k.padEnd(20)} sha256=${hex}  → (${p.map(x=>x.toFixed(4)).join(', ')})  node=<b style="color:${owner!=='??'?nc(owner):'var(--muted)'}">${owner}</b>`);
+      await new Promise(r=>setTimeout(r,15));
+    }
+  });
+}
+
+// ── INIT ──
+draw();
+LH('── CAN Network Simulator ──────────');
+LI('Bootstrap a network to get started.');
+LI('Canvas shows live zone grid — hover/click zones.');
+LI('All terminal operations available via buttons below.');
+LI('');
+LI('Quick start:');
+LI('  1. Click "Bootstrap New Network"');
+LI('  2. Add nodes with "＋ Node" or "＋ Multi"');
+LI('  3. Store data with "⬆ Store" or "⬆ Batch"');
+LI('  4. Look up with "⬇ Lookup"');
+LI('  5. Remove a node with "− Remove" to see zone handoff');
+upStatus();
+</script></body></html>
