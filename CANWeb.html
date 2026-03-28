@@ -398,8 +398,7 @@
 </div>
 
 <script>
-// CAN Network Simulator
-// Implemented Content Addressable Network (CAN)
+
 
 // ── COLOR PALETTE ──
 const PALETTE = [
@@ -421,7 +420,7 @@ function hexRgb(h) {
   };
 }
 
-// ── SHA256 (using Web Crypto API) ──
+// ── SHA-256 via Web Crypto ──
 async function sha256b(s) {
   const e = new TextEncoder();
   const b = await crypto.subtle.digest('SHA-256', e.encode(s));
@@ -431,6 +430,7 @@ async function sha256h(s) {
   const b = await sha256b(s);
   return Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('');
 }
+
 async function hashKey(k, d = 2) {
   const dig = await sha256b(k);
   const bpd = Math.max(1, Math.floor(dig.length / d));
@@ -444,106 +444,145 @@ async function hashKey(k, d = 2) {
   return c;
 }
 
-// ── ZONE ──
+// ── Zone ────────────────────────────────────────
 class Zone {
   constructor(l, h) { this.l = [...l]; this.h = [...h]; this.d = l.length; }
+
   static full(d) { return new Zone(new Array(d).fill(0), new Array(d).fill(1)); }
-  has(p) { for (let i = 0; i < this.d; i++) if (p[i] < this.l[i] || p[i] >= this.h[i]) return false; return true; }
+
+  // contains 
+  has(p) {
+    for (let i = 0; i < this.d; i++)
+      if (p[i] < this.l[i] || p[i] >= this.h[i]) return false;
+    return true;
+  }
+
   split(dim) {
     const m = (this.l[dim] + this.h[dim]) / 2;
     const l1=[...this.l],h1=[...this.h],l2=[...this.l],h2=[...this.h];
     h1[dim]=m; l2[dim]=m;
     return [new Zone(l1,h1), new Zone(l2,h2)];
   }
-  longest() { let b=0,bl=-1; for(let i=0;i<this.d;i++){const x=this.h[i]-this.l[i];if(x>bl){bl=x;b=i;}} return b; }
-  splitL() { return this.split(this.longest()); }
-  vol() { let v=1; for(let i=0;i<this.d;i++) v*=this.h[i]-this.l[i]; return v; }
-  dist(p) { let s=0; for(let i=0;i<this.d;i++){let d=0;if(p[i]<this.l[i])d=this.l[i]-p[i];else if(p[i]>=this.h[i])d=p[i]-this.h[i];s+=d*d;} return Math.sqrt(s); }
-  adj(o) {
-    let t=0,e=0;
-    for(let i=0;i<this.d;i++){
-      const tk=Math.abs(this.h[i]-o.l[i])<1e-9||Math.abs(o.h[i]-this.l[i])<1e-9;
-      const ex=Math.abs(this.l[i]-o.l[i])<1e-9&&Math.abs(this.h[i]-o.h[i])<1e-9;
-      if(tk)t++; if(ex)e++;
+
+  // splitLongest  –
+  splitL() { return this.split(this.longestDim()); }
+
+  longestDim() {
+    let b=0, bl=-1;
+    for (let i=0; i<this.d; i++) {
+      const x = this.h[i]-this.l[i];
+      if (x > bl) { bl=x; b=i; }
     }
-    return t===1&&e===this.d-1;
+    return b;
   }
-  merge(o) { const l=[],h=[]; for(let i=0;i<this.d;i++){l.push(Math.min(this.l[i],o.l[i]));h.push(Math.max(this.h[i],o.h[i]));} return new Zone(l,h); }
-  cen() { return this.l.map((l,i)=>(l+this.h[i])/2); }
-  rand() { return this.l.map((l,i)=>l+Math.random()*(this.h[i]-l)); }
-  str() { return this.l.map((l,i)=>`[${l.toFixed(3)}, ${this.h[i].toFixed(3)})`).join(' x '); }
+
+  vol() { let v=1; for (let i=0;i<this.d;i++) v*=this.h[i]-this.l[i]; return v; }
+
+  dist(p) {
+    let s=0;
+    for (let i=0;i<this.d;i++) {
+      let d=0;
+      if (p[i] < this.l[i])       d = this.l[i] - p[i];
+      else if (p[i] >= this.h[i]) d = p[i] - this.h[i];
+      s += d*d;
+    }
+    return Math.sqrt(s);
+  }
+
+  adj(o) {
+    let touching=0, exact=0;
+    for (let i=0; i<this.d; i++) {
+      const tk = Math.abs(this.h[i]-o.l[i])<1e-9 || Math.abs(o.h[i]-this.l[i])<1e-9;
+      const ex = Math.abs(this.l[i]-o.l[i])<1e-9 && Math.abs(this.h[i]-o.h[i])<1e-9;
+      if (tk) touching++;
+      if (ex) exact++;
+    }
+    return touching===1 && exact===this.d-1;
+  }
+
+  // merge  
+  merge(o) {
+    const l=[], h=[];
+    for (let i=0;i<this.d;i++) {
+      l.push(Math.min(this.l[i], o.l[i]));
+      h.push(Math.max(this.h[i], o.h[i]));
+    }
+    return new Zone(l, h);
+  }
+
+  cen()  { return this.l.map((l,i) => (l+this.h[i])/2); }
+  rand() { return this.l.map((l,i) => l + Math.random()*(this.h[i]-l)); }
+  str()  { return this.l.map((l,i) => `[${l.toFixed(3)}, ${this.h[i].toFixed(3)})`).join(' x '); }
 }
 
-// ── DATA STORE ──
+// ── DataStore  ────────────────────────────
 class DS {
   constructor() { this.data = new Map(); this.ver = new Map(); }
-  put(k,v,by) {
+
+  put(k, v, by, pt=null) {
     const n = (this.ver.get(k)||0) + 1;
     const ex = this.data.get(k);
     if (ex && ex.v >= n) return false;
-    this.data.set(k, {val:v, v:n, by, at:Date.now()});
+    // pt is the cached hash-point – used for zone-transfer on split
+    this.data.set(k, {val:v, v:n, by, at:Date.now(), pt});
     this.ver.set(k, n);
     return true;
   }
+
   get(k) { return this.data.get(k) || null; }
   size() { return this.data.size; }
-  snap() { const o=new Map(); this.data.forEach((v,k)=>o.set(k,{...v})); return o; }
-  extractIf(f) { const o=new Map(); for(const[k,v]of this.data)if(f(k)){o.set(k,{...v});this.data.delete(k);} return o; }
-  bulkLoad(m) { m.forEach((v,k)=>{this.data.set(k,{...v});this.ver.set(k,v.v);}); }
+  snap() {
+    const o = new Map();
+    this.data.forEach((v,k) => o.set(k, {...v}));
+    return o;
+  }
+
+  extractIf(f) {
+    const o = new Map();
+    const del = [];
+    for (const [k,v] of this.data) {
+      if (f(k, v)) { o.set(k, {...v}); del.push(k); }
+    }
+    del.forEach(k => this.data.delete(k));
+    return o;
+  }
+
+  bulkLoad(m) {
+    m.forEach((v,k) => {
+      this.data.set(k, {...v});
+      this.ver.set(k, v.v);
+    });
+  }
 }
 
-// ── ROUTING TABLE ──
+// ── RoutingTable ─────────────────────
 class RT {
   constructor() { this.nb = new Map(); }
-  add(n) { if(n) this.nb.set(n.id, n); }
-  rm(id) { this.nb.delete(id); }
-  size() { return this.nb.size; }
-  all() { return [...this.nb.values()]; }
+
+  add(n)     { if (n) this.nb.set(n.id, n); }
+  rm(id)     { this.nb.delete(id); }
+  size()     { return this.nb.size; }
+  all()      { return [...this.nb.values()]; }
+
   next(dest, mz) {
     let best=null, bd=mz.dist(dest);
-    for(const n of this.nb.values()){
-      const d=n.zone.dist(dest);
-      if(d<bd){bd=d;best=n;}
+    for (const n of this.nb.values()) {
+      const d = n.zone.dist(dest);
+      if (d < bd) { bd=d; best=n; }
     }
     return best;
   }
+
   takeover(mz) {
     let best=null, bv=Infinity;
-    for(const n of this.nb.values())
-      if(mz.adj(n.zone) && n.zone.vol()<bv){bv=n.zone.vol();best=n;}
+    for (const n of this.nb.values()) {
+      if (mz.adj(n.zone) && n.zone.vol() < bv) { bv=n.zone.vol(); best=n; }
+    }
     return best;
   }
-  faceTouching(mz) {
-    const out = [];
-    for(const n of this.nb.values()){
-      for(let td=0; td<mz.d; td++){
-        const tk = Math.abs(mz.h[td]-n.zone.l[td])<1e-9 ||
-                   Math.abs(n.zone.h[td]-mz.l[td])<1e-9;
-        if(!tk) continue;
-        let ok = true;
-        for(let i=0;i<mz.d;i++){
-          if(i===td) continue;
-          if(Math.min(mz.h[i],n.zone.h[i])-Math.max(mz.l[i],n.zone.l[i])<=1e-9){ok=false;break;}
-        }
-        if(ok){out.push({info:n,td});break;}
-      }
-    }
-    return out;
-  }
 }
 
-function subRegion(dz, nb, td) {
-  const sl=[...dz.l], sh=[...dz.h];
-  for(let i=0;i<dz.d;i++){
-    if(i===td) continue;
-    sl[i]=Math.max(dz.l[i], nb.zone.l[i]);
-    sh[i]=Math.min(dz.h[i], nb.zone.h[i]);
-    if(sl[i]+1e-9>=sh[i]) return null;
-  }
-  return new Zone(sl,sh);
-}
-
-// ── CAN NODE ──
+// ── CANNode  ───────────────────────────────────
 class CANNode {
   constructor(id, zone, ov) {
     this.id=id; this.zone=zone; this.ov=ov;
@@ -551,164 +590,264 @@ class CANNode {
     this.sent=0; this.rcvd=0; this.ht=0; this.ro=0;
     ov.set(id, this);
   }
+
+  // ── JOIN ──────────────────────────────────────────────────────────────────
   async join(bid) {
-    const b=this.ov.get(bid); if(!b) return false;
-    const p=Zone.full(this.zone.d).rand();
-    const r=b.rj(this.id, p, 0);
-    if(!r||!r.ok) return false;
-    this.zone=r.zone;
-    if(r.nb) r.nb.forEach(n=>this.rt.add(n));
+    const b = this.ov.get(bid);
+    if (!b) return false;
+
+    const p = Zone.full(this.zone.d).rand();
+    const r = b.rj(this.id, p, 0);
+    if (!r || !r.ok) return false;
+
+    this.zone = r.zone;
+    if (r.nb) r.nb.forEach(entry => {
+      const n = this.ov.get(entry.id);
+      if (n && n.id !== this.id) this.rt.add(n);
+    });
+
+    if (r.xfer && r.xfer.size > 0) this.store.bulkLoad(r.xfer);
+
     return true;
   }
+
   rj(nid, p, h) {
     this.rcvd++;
-    if(this.zone.has(p)||h>50) return this.dj(nid,p);
-    const nx=this.rt.next(p,this.zone);
-    if(!nx) return this.dj(nid,p);
-    const nn=this.ov.get(nx.id);
-    if(!nn){this.rt.rm(nx.id);return this.dj(nid,p);}
+    if (this.zone.has(p) || h > 50) return this.dj(nid, p);
+    const nx = this.rt.next(p, this.zone);
+    if (!nx) return this.dj(nid, p);
+    const nn = this.ov.get(nx.id);
+    if (!nn) { this.rt.rm(nx.id); return this.dj(nid, p); }
     this.sent++;
-    return nn.rj(nid,p,h+1);
+    return nn.rj(nid, p, h+1);
   }
+
   dj(nid, p) {
-    const[keep,asgn]=this.zone.splitL();
-    const old=this.rt.all();
-    this.zone=keep;
-    const ni={id:nid,zone:asgn};
-    this.rt.add(ni);
-    const mi={id:this.id,zone:keep};
-    old.forEach(nb=>{const n=this.ov.get(nb.id);if(n){n.rt.add(mi);n.rt.add(ni);}});
-    return{ok:true,zone:asgn,nb:[...old,mi]};
+    const [keep, asgn] = this.zone.splitL();
+    const old = this.rt.all();
+    this.zone = keep;
+
+    const xfer = this.store.extractIf((k, entry) =>
+      entry.pt !== null && entry.pt !== undefined && asgn.has(entry.pt)
+    );
+
+    const newNode = this.ov.get(nid);
+    this.rt.add(newNode);
+    old.forEach(nb => {
+      const n = this.ov.get(nb.id);
+      if (n) { n.rt.add(this); n.rt.add(newNode); }
+    });
+
+    return {ok:true, zone:asgn, nb:[...old.map(n=>({id:n.id})), {id:this.id}], xfer};
   }
-  async storeKV(k,v) {
-    const p=await hashKey(k,this.zone.d);
-    return this.rs(k,v,p,0);
+
+  // ── STORE ─────────────────────────────────────────────────────────────────
+  async storeKV(k, v) {
+    const p = await hashKey(k, this.zone.d);
+    return this.rs(k, v, p, 0);
   }
-  rs(k,v,p,h) {
+
+  rs(k, v, p, h) {
     this.rcvd++;
-    if(this.zone.has(p)){this.store.put(k,v,this.id);return{ok:true,at:this.id};}
-    if(h>50){this.store.put(k,v,this.id);return{ok:true,at:this.id};}
-    const nx=this.rt.next(p,this.zone);
-    if(!nx){this.store.put(k,v,this.id);return{ok:true,at:this.id};}
-    const nn=this.ov.get(nx.id);
-    if(!nn){this.rt.rm(nx.id);return this.rs(k,v,p,h);}
+    if (this.zone.has(p)) {
+      this.store.put(k, v, this.id, p);          
+      return {ok:true, at:this.id};
+    }
+    if (h > 50) {
+      this.store.put(k, v, this.id, p);            
+      return {ok:true, at:this.id};
+    }
+    const nx = this.rt.next(p, this.zone);
+    if (!nx) {
+      this.store.put(k, v, this.id, p);           
+      return {ok:true, at:this.id};
+    }
+    const nn = this.ov.get(nx.id);
+    if (!nn) { this.rt.rm(nx.id); return this.rs(k, v, p, h+1); }
     this.ht++; this.ro++; this.sent++;
-    return nn.rs(k,v,p,h+1);
+    return nn.rs(k, v, p, h+1);
   }
+
+  // ── LOOKUP ────────────────────────────────────────────────────────────────
   async lookupKV(k) {
-    const p=await hashKey(k,this.zone.d);
-    return this.rl(k,p,0);
+    const p = await hashKey(k, this.zone.d);
+    return this.rl(k, p, 0);
   }
-  rl(k,p,h) {
+
+  rl(k, p, h) {
     this.rcvd++;
-    if(this.zone.has(p)){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}
-    if(h>50){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}
-    const nx=this.rt.next(p,this.zone);
-    if(!nx){const e=this.store.get(k);return{found:!!e,val:e?e.val:null,at:this.id};}
-    const nn=this.ov.get(nx.id);
-    if(!nn){this.rt.rm(nx.id);return this.rl(k,p,h);}
+    if (this.zone.has(p)) {
+      const e = this.store.get(k);
+      return {found:!!e, val: e ? e.val : null, at:this.id};
+    }
+    if (h > 50) {
+      const e = this.store.get(k);
+      return {found:!!e, val: e ? e.val : null, at:this.id};
+    }
+    const nx = this.rt.next(p, this.zone);
+    if (!nx) {
+      const e = this.store.get(k);
+      return {found:!!e, val: e ? e.val : null, at:this.id};
+    }
+    const nn = this.ov.get(nx.id);
+    if (!nn) { this.rt.rm(nx.id); return this.rl(k, p, h+1); }
     this.ht++; this.ro++; this.sent++;
-    return nn.rl(k,p,h+1);
+    return nn.rl(k, p, h+1);
   }
+
+  // ── LEAVE ─────────────────────────────────────────────────────────────────
   leave() {
-    const dz=this.zone;
-    const allData=this.store.snap();
-    const allNbs=this.rt.all();
-    const exact=this.rt.takeover(dz);
-    if(exact){
-      const nb=this.ov.get(exact.id);
-      if(nb){
-        nb.store.bulkLoad(allData);
-        nb.zone=dz.merge(exact.zone);
-        allNbs.forEach(n=>{if(n.id!==exact.id) nb.rt.add(n);});
-        const ei={id:nb.id,zone:nb.zone};
-        allNbs.forEach(n=>{
-          if(n.id===exact.id) return;
-          const nn=this.ov.get(n.id); if(nn) nn.rt.add(ei);
-        });
+    const dz      = this.zone;
+    const allData = this.store.snap();
+
+    // Convenience: all overlay nodes except self (re-evaluated after deletion)
+    const rest = () => {
+      const out = [];
+      for (const [id, n] of this.ov) if (id !== this.id) out.push(n);
+      return out;
+    };
+
+    // ── Step 1: strict clean merge ────────────────────────────────────────
+    // Scan full overlay so we find adjacent nodes even if RT is stale.
+    let exact = null, bestVol = Infinity;
+    for (const n of rest()) {
+      if (dz.adj(n.zone) && n.zone.vol() < bestVol) {
+        bestVol = n.zone.vol();
+        exact = n;
       }
-      allNbs.forEach(n=>{const nn=this.ov.get(n.id);if(nn)nn.rt.rm(this.id);});
-      this.ov.delete(this.id);
-      return{mode:'clean',took:[exact.id]};
     }
-    const face=this.rt.faceTouching(dz);
-    if(face.length>0){
-      const absorbers=[];
-      for(const{info:pn,td}of face){
-        const nb=this.ov.get(pn.id); if(!nb) continue;
-        const sub=subRegion(dz,pn,td); if(!sub) continue;
-        nb.zone=sub.merge(nb.zone);
-        absorbers.push({nb,pn});
-      }
-      if(absorbers.length>0){
-        absorbers.forEach(({nb})=>nb.store.bulkLoad(allData));
-        absorbers.forEach(({nb,pn})=>{
-          allNbs.forEach(n=>{if(n.id!==pn.id) nb.rt.add(n);});
-        });
-        for(let i=0;i<absorbers.length;i++)
-          for(let j=0;j<absorbers.length;j++){
-            if(i===j) continue;
-            absorbers[i].nb.rt.add({id:absorbers[j].nb.id,zone:absorbers[j].nb.zone});
+
+    if (exact) {
+      exact.store.bulkLoad(allData);
+      exact.zone = dz.merge(exact.zone);
+      // Give takeover node all our routing entries
+      this.rt.all().forEach(nb => { if (nb.id !== exact.id) exact.rt.add(nb); });
+      // Remove self and broadcast expanded zone to every remaining node
+      this.ov.delete(this.id);
+      for (const n of rest()) { n.rt.rm(this.id); n.rt.add(exact); }
+      return {mode: 'clean', took: exact.id};
+    }
+
+    // ── Step 2: partial sub-region distribution ───────────────────────────
+    const absorbers = [];
+
+    outer:
+    for (let td = 0; td < dz.d; td++) {
+      for (const side of ['H', 'L']) {
+        const candidates = [];
+        for (const nb of rest()) {
+          const touches = side === 'H'
+            ? Math.abs(dz.h[td] - nb.zone.l[td]) < 1e-9
+            : Math.abs(nb.zone.h[td] - dz.l[td]) < 1e-9;
+          if (!touches) continue;
+
+          let ok = true;
+          for (let i = 0; i < dz.d; i++) {
+            if (i === td) continue;
+            const ol = Math.max(dz.l[i], nb.zone.l[i]);
+            const oh = Math.min(dz.h[i], nb.zone.h[i]);
+            if (oh - ol < 1e-9 ||
+                nb.zone.l[i] < dz.l[i] - 1e-9 ||
+                nb.zone.h[i] > dz.h[i] + 1e-9) { ok = false; break; }
           }
-        absorbers.forEach(({nb,pn})=>{
-          const ei={id:nb.id,zone:nb.zone};
-          allNbs.forEach(n=>{
-            if(n.id===pn.id) return;
-            const nn=this.ov.get(n.id); if(nn) nn.rt.add(ei);
-          });
-        });
+          if (!ok) continue;
+
+          const sl = [...nb.zone.l], sh = [...nb.zone.h];
+          sl[td] = dz.l[td]; sh[td] = dz.h[td];
+          candidates.push({nb, sub: new Zone(sl, sh)});
+        }
+
+        if (candidates.length > 0) {
+          absorbers.push(...candidates);
+          break outer;   // commit to this single face — no other face allowed
+        }
       }
-      allNbs.forEach(n=>{const nn=this.ov.get(n.id);if(nn)nn.rt.rm(this.id);});
-      this.ov.delete(this.id);
-      return{mode:'partial',took:absorbers.map(a=>a.pn.id)};
     }
-    const any=allNbs.find(n=>this.ov.has(n.id));
-    if(any){const nb=this.ov.get(any.id);if(nb) nb.store.bulkLoad(allData);}
-    allNbs.forEach(n=>{const nn=this.ov.get(n.id);if(nn)nn.rt.rm(this.id);});
+
+    if (absorbers.length > 0) {
+      absorbers.forEach(({nb, sub}) => {
+        nb.zone = sub.merge(nb.zone);
+        nb.store.bulkLoad(allData);
+      });s
+      
+      for (let i = 0; i < absorbers.length; i++)
+        for (let j = 0; j < absorbers.length; j++)
+          if (i !== j) absorbers[i].nb.rt.add(absorbers[j].nb);
+
+      this.ov.delete(this.id);
+      for (const n of rest()) {
+        n.rt.rm(this.id);
+        for (const {nb} of absorbers)
+          if (n.id !== nb.id) n.rt.add(nb);
+      }
+      return {mode: 'partial', took: absorbers.map(a => a.nb.id)};
+    }
+
+    // ── Step 3: fallback ──────────────────────────────────────────────────
+    const survivors = rest();
+    if (survivors.length > 0) survivors[0].store.bulkLoad(allData);
     this.ov.delete(this.id);
-    return{mode:'none',took:[]};
+    for (const n of rest()) n.rt.rm(this.id);
+    return {mode: 'none', dataAt: survivors.length > 0 ? survivors[0].id : null};
   }
-  avgH() { return this.ro===0?'0.00':(this.ht/this.ro).toFixed(2); }
+
+  avgH() { return this.ro===0 ? '0.00' : (this.ht/this.ro).toFixed(2); }
 }
 
-// ── NETWORK ──
+// ── CANNet ─────────────────────────────────
 class CANNet {
   constructor(d=2) { this.d=d; this.ov=new Map(); }
+
   boot(id) { return new CANNode(id, Zone.full(this.d), this.ov); }
-  async add(id,bid) {
-    const n=new CANNode(id,Zone.full(this.d),this.ov);
-    const ok=await n.join(bid);
-    if(!ok){this.ov.delete(id);throw new Error('join failed for '+id);}
+
+  async add(id, bid) {
+    const n = new CANNode(id, Zone.full(this.d), this.ov);
+    const ok = await n.join(bid);
+    if (!ok) { this.ov.delete(id); throw new Error('join failed for '+id); }
     return n;
   }
-  async store(k,v) { const n=this.any();if(!n)throw new Error('empty');return n.storeKV(k,v); }
-  async lookup(k) { const n=this.any();if(!n)return{found:false};return n.lookupKV(k); }
+
+  async store(k, v) {
+    const n = this.any();
+    if (!n) throw new Error('empty network');
+    return n.storeKV(k, v);
+  }
+
+  async lookup(k) {
+    const n = this.any();
+    if (!n) return {found:false};
+    return n.lookupKV(k);
+  }
+
   async owner(k) {
-    const p=await hashKey(k,this.d);
-    for(const[,n]of this.ov) if(n.zone.has(p)) return n.id;
+    const p = await hashKey(k, this.d);
+    for (const [,n] of this.ov) if (n.zone.has(p)) return n.id;
     return '??';
   }
-  any() { return this.ov.values().next().value || null; }
-  size() { return this.ov.size; }
-  nodes() { return [...this.ov.values()].sort((a,b)=>a.id.localeCompare(b.id)); }
+
+  any()   { return this.ov.values().next().value || null; }
+  size()  { return this.ov.size; }
+  nodes() { return [...this.ov.values()].sort((a,b) => a.id.localeCompare(b.id)); }
   get(id) { return this.ov.get(id) || null; }
-  totalVol() { let v=0; this.ov.forEach(n=>v+=n.zone.vol()); return v; }
+
+  totalVol() { let v=0; this.ov.forEach(n => v+=n.zone.vol()); return v; }
+
   verify(N=1000) {
     let ok=0;
-    for(let i=0;i<N;i++){
-      const p=[];
-      for(let d=0;d<this.d;d++) p.push(Math.random());
+    for (let i=0;i<N;i++) {
+      const p = [];
+      for (let d=0;d<this.d;d++) p.push(Math.random());
       let owners=0;
-      this.ov.forEach(n=>{if(n.zone.has(p))owners++;});
-      if(owners===1) ok++;
+      this.ov.forEach(n => { if (n.zone.has(p)) owners++; });
+      if (owners===1) ok++;
     }
-    return{ok,N,pct:(100*ok/N).toFixed(1)};
+    return {ok, N, pct:(100*ok/N).toFixed(1)};
   }
 }
 
 // ── GLOBALS ──
-let net = null, sel = null, mact = null;
-const CW = 498, CH = 400;
+let net=null, sel=null, mact=null;
+const CW=498, CH=400;
 
 // ── CONSOLE HELPERS ──
 function ts() {
@@ -724,22 +863,21 @@ function lg(cls, msg) {
   const cw = document.getElementById('console-wrap');
   cw.scrollTop = cw.scrollHeight;
 }
-const LC = m => lg('log-cmd', ' ' + m);
-const LO = m => lg('log-ok',  ' ' + m);
-const LE = m => lg('log-err', ' ' + m);
-const LI = m => lg('log-info','  ' + m);
-const LW = m => lg('log-warn',' ' + m);
+const LC = m => lg('log-cmd',  ' '+m);
+const LO = m => lg('log-ok',   ' '+m);
+const LE = m => lg('log-err',  ' '+m);
+const LI = m => lg('log-info', '  '+m);
+const LW = m => lg('log-warn', ' '+m);
 const LH = m => lg('log-head', m);
-const LD = m => lg('log-data','  ' + m);
-const LHIT  = m => lg('log-hit',  '  HIT  ' + m);
-const LMISS = m => lg('log-miss', '  miss ' + m);
+const LD = m => lg('log-data', '  '+m);
+const LHIT  = m => lg('log-hit',  '  HIT  '+m);
+const LMISS = m => lg('log-miss', '  miss '+m);
 function clearConsole() { document.getElementById('console-log').innerHTML=''; LI('console cleared'); }
 
 function upStatus() {
   const el = document.getElementById('status-bar');
-  if(!net || net.size()===0) {
-    el.textContent='No network loaded';
-    el.className='';
+  if (!net || net.size()===0) {
+    el.textContent='No network loaded'; el.className='';
   } else {
     el.textContent=`Network active — ${net.size()} node${net.size()!==1?'s':''}, ${net.d}D`;
     el.className='alive';
@@ -748,27 +886,21 @@ function upStatus() {
 
 // ── CANVAS ──
 function draw() {
-  const cv = document.getElementById('zone-canvas');
+  const cv  = document.getElementById('zone-canvas');
   const ctx = cv.getContext('2d');
   ctx.clearRect(0,0,CW,CH);
+  ctx.fillStyle='#fafafa'; ctx.fillRect(0,0,CW,CH);
 
-  // background
-  ctx.fillStyle = '#fafafa';
-  ctx.fillRect(0,0,CW,CH);
-
-  if(!net || net.size()===0) {
-    ctx.fillStyle='#aaa';
-    ctx.font='13px Courier New,monospace';
+  if (!net || net.size()===0) {
+    ctx.fillStyle='#aaa'; ctx.font='13px Courier New,monospace';
     ctx.textAlign='center';
     ctx.fillText('No network — click "Bootstrap Network" above', CW/2, CH/2);
     upLegend(); upStatus(); return;
   }
 
-  // light grid lines
-  ctx.strokeStyle='#e0e0e0';
-  ctx.lineWidth=0.5;
-  for(let x=0;x<=CW;x+=CW/8){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
-  for(let y=0;y<=CH;y+=CH/8){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
+  ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=0.5;
+  for (let x=0;x<=CW;x+=CW/8) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke(); }
+  for (let y=0;y<=CH;y+=CH/8) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke(); }
 
   net.nodes().forEach(node => {
     const col = nc(node.id);
@@ -778,24 +910,23 @@ function draw() {
     const h = (node.zone.h[1]-node.zone.l[1])*CH;
     const isSel = sel===node.id;
 
-    ctx.fillStyle = `rgba(${r},${g},${b},${isSel?0.25:0.12})`;
+    ctx.fillStyle=`rgba(${r},${g},${b},${isSel?0.25:0.12})`;
     ctx.fillRect(x+1, y+1, w-2, h-2);
 
-    ctx.strokeStyle = col;
-    ctx.lineWidth = isSel ? 2.5 : 1.5;
-    if(isSel){ ctx.setLineDash([]); }
+    ctx.strokeStyle=col; ctx.lineWidth=isSel?2.5:1.5;
+    ctx.setLineDash([]);
     ctx.strokeRect(x+0.5, y+0.5, w-1, h-1);
 
     const fs = Math.min(14, Math.max(9, Math.min(w,h)/5));
-    const cx = x+w/2, cy = y+h/2;
-    ctx.font = `bold ${fs}px Courier New,monospace`;
+    const cx=x+w/2, cy=y+h/2;
+    ctx.font=`bold ${fs}px Courier New,monospace`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle = col;
+    ctx.fillStyle=col;
     ctx.fillText(node.id, cx, cy-(node.store.size()>0&&fs>9?fs*0.6:0));
 
-    if(fs>8 && node.store.size()>0){
-      ctx.font = `${Math.max(8,fs-3)}px Courier New,monospace`;
-      ctx.fillStyle = `rgba(${r},${g},${b},0.7)`;
+    if (fs>8 && node.store.size()>0) {
+      ctx.font=`${Math.max(8,fs-3)}px Courier New,monospace`;
+      ctx.fillStyle=`rgba(${r},${g},${b},0.7)`;
       ctx.fillText(`${node.store.size()} key${node.store.size()!==1?'s':''}`, cx, cy+(fs>9?fs*0.65:8));
     }
   });
@@ -806,28 +937,28 @@ function draw() {
 function upLegend() {
   const leg = document.getElementById('legend');
   leg.innerHTML='';
-  if(!net) return;
+  if (!net) return;
   net.nodes().forEach(n => {
     const it = document.createElement('div');
     it.className='legend-item';
     it.innerHTML=`<div class="legend-dot" style="background:${nc(n.id)}"></div>${n.id} <span style="color:#888">(${n.store.size()})</span>`;
-    it.onclick=()=>{sel=sel===n.id?null:n.id;draw();};
+    it.onclick=()=>{ sel=sel===n.id?null:n.id; draw(); };
     leg.appendChild(it);
   });
 }
 
 // canvas interactions
 document.getElementById('zone-canvas').addEventListener('mousemove', e => {
-  if(!net) return;
-  const r = e.target.getBoundingClientRect();
-  const cx=(e.clientX-r.left)/CW, cy=(e.clientY-r.top)/CH;
+  if (!net) return;
+  const r  = e.target.getBoundingClientRect();
+  const cx = (e.clientX-r.left)/CW, cy = (e.clientY-r.top)/CH;
   let found=null;
-  net.ov.forEach(n=>{ if(n.zone.has([cx,cy])) found=n; });
-  const tip = document.getElementById('tooltip');
+  net.ov.forEach(n => { if (n.zone.has([cx,cy])) found=n; });
+  const tip  = document.getElementById('tooltip');
   const info = document.getElementById('canvas-info');
-  if(found){
-    document.getElementById('tt-title').textContent = found.id;
-    document.getElementById('tt-body').innerHTML =
+  if (found) {
+    document.getElementById('tt-title').textContent=found.id;
+    document.getElementById('tt-body').innerHTML=
       `zone: ${found.zone.str()}<br>keys: ${found.store.size()}<br>neighbours: ${found.rt.size()}<br>volume: ${(found.zone.vol()*100).toFixed(2)}%<br>sent: ${found.sent}  rcvd: ${found.rcvd}`;
     tip.style.display='block';
     tip.style.left=(e.clientX+14)+'px';
@@ -842,51 +973,45 @@ document.getElementById('zone-canvas').addEventListener('mouseleave', () => {
   document.getElementById('tooltip').style.display='none';
 });
 document.getElementById('zone-canvas').addEventListener('click', e => {
-  if(!net) return;
-  const r = e.target.getBoundingClientRect();
-  const cx=(e.clientX-r.left)/CW, cy=(e.clientY-r.top)/CH;
+  if (!net) return;
+  const r  = e.target.getBoundingClientRect();
+  const cx = (e.clientX-r.left)/CW, cy = (e.clientY-r.top)/CH;
   let found=null;
-  net.ov.forEach(n=>{ if(n.zone.has([cx,cy])) found=n; });
-  if(!found) return;
+  net.ov.forEach(n => { if (n.zone.has([cx,cy])) found=n; });
+  if (!found) return;
   sel = sel===found.id ? null : found.id;
   draw();
-  if(sel){
+  if (sel) {
     LC(`selected: ${sel}`);
     LD(`zone: ${found.zone.str()}`);
     LD(`entries=${found.store.size()}  neighbours=${found.rt.size()}  avgHops=${found.avgH()}`);
-    if(found.store.size()>0)
-      found.store.data.forEach((v,k)=>LD(`  ${k} = "${v.val}"`));
+    if (found.store.size()>0)
+      found.store.data.forEach((v,k) => LD(`  ${k} = "${v.val}"`));
   }
 });
 
 // ── MODAL HELPERS ──
 function showM(title, html, action) {
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-body').innerHTML = html;
-  mact = action;
+  document.getElementById('modal-title').textContent=title;
+  document.getElementById('modal-body').innerHTML=html;
+  mact=action;
   document.getElementById('modal-overlay').classList.add('show');
-  setTimeout(()=>{
-    const i = document.querySelector('#modal-body input, #modal-body textarea');
-    if(i) i.focus();
-  }, 50);
+  setTimeout(()=>{ const i=document.querySelector('#modal-body input, #modal-body textarea'); if(i) i.focus(); }, 50);
 }
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('show');
-  mact = null;
-}
-function modalConfirm() { if(mact) mact(); }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); mact=null; }
+function modalConfirm() { if (mact) mact(); }
 
 document.getElementById('modal-overlay').addEventListener('click', e => {
-  if(e.target===document.getElementById('modal-overlay')) closeModal();
+  if (e.target===document.getElementById('modal-overlay')) closeModal();
 });
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 document.addEventListener('keydown', e => {
-  if(e.key==='Enter' && document.getElementById('modal-overlay').classList.contains('show'))
-    if(!document.querySelector('#modal-body textarea:focus')) modalConfirm();
+  if (e.key==='Enter' && document.getElementById('modal-overlay').classList.contains('show'))
+    if (!document.querySelector('#modal-body textarea:focus')) modalConfirm();
 });
 
 function nodeSel(id='bsel') {
-  if(!net) return `<select id="${id}"><option>no network</option></select>`;
+  if (!net) return `<select id="${id}"><option>no network</option></select>`;
   return `<select id="${id}">${net.nodes().map(n=>`<option>${n.id}</option>`).join('')}</select>`;
 }
 
@@ -909,86 +1034,91 @@ function showBootstrap() {
 }
 
 function showAddNode() {
-  if(!net){LE('bootstrap a network first');return;}
+  if (!net) { LE('bootstrap a network first'); return; }
   showM('Add Node', `
     <div class="field"><label>Node Name</label><input id="mn" placeholder="alice"></div>
     <div class="field"><label>Bootstrap Contact</label>${nodeSel()}</div>
   `, async () => {
     const name = document.getElementById('mn').value.trim();
     const boot = document.getElementById('bsel').value;
-    if(!name){LE('name cannot be empty');return;}
-    if(net.get(name)){LE(`"${name}" already exists`);return;}
+    if (!name) { LE('name cannot be empty'); return; }
+    if (net.get(name)) { LE(`"${name}" already exists`); return; }
     LC(`add node "${name}" via ${boot}`);
-    try{
+    try {
       const n = await net.add(name, boot);
       LO(`"${name}" joined — zone: ${n.zone.str()}`);
       draw(); closeModal();
-    } catch(e){ LE(e.message); }
+    } catch(e) { LE(e.message); }
   });
 }
 
 function showAddMultiple() {
-  if(!net){LE('bootstrap a network first');return;}
+  if (!net) { LE('bootstrap a network first'); return; }
   showM('Add Multiple Nodes', `
     <div class="field"><label>Names (comma separated)</label><input id="mns" placeholder="alice, bob, carol, dave"></div>
     <div class="field"><label>Bootstrap Contact</label>${nodeSel()}</div>
   `, async () => {
     const names = document.getElementById('mns').value.split(',').map(s=>s.trim()).filter(Boolean);
     const boot  = document.getElementById('bsel').value;
-    if(!names.length){LE('no names entered');return;}
+    if (!names.length) { LE('no names entered'); return; }
     LC(`adding [${names.join(', ')}] via ${boot}`);
     closeModal();
-    for(const name of names){
-      if(net.get(name)){LW(`"${name}" already exists — skipped`);continue;}
-      try{
+    for (const name of names) {
+      if (net.get(name)) { LW(`"${name}" already exists — skipped`); continue; }
+      try {
         const n = await net.add(name, boot);
         LO(`"${name}" — zone: ${n.zone.str()}`);
         draw();
         await new Promise(r=>setTimeout(r,30));
-      } catch(e){ LE(`"${name}": ${e.message}`); }
+      } catch(e) { LE(`"${name}": ${e.message}`); }
     }
     draw();
   });
 }
 
 function showRemoveNode() {
-  if(!net){LE('no network');return;}
-  if(net.size()<=1){LE('cannot remove the last node');return;}
+  if (!net) { LE('no network'); return; }
+  if (net.size()<=1) { LE('cannot remove the last node'); return; }
   showM('Remove Node (Graceful Leave)', `
     <div class="field"><label>Node to Remove</label>${nodeSel('rsel')}</div>
   `, () => {
     const id   = document.getElementById('rsel').value;
     const node = net.get(id);
-    if(!node){LE(`"${id}" not found`);return;}
+    if (!node) { LE(`"${id}" not found`); return; }
+
     LC(`remove "${id}"`);
     LD(`zone: ${node.zone.str()}`);
     LD(`transferring ${node.store.size()} entries...`);
+
     const res = node.leave();
-    if(res.mode==='clean'){
-      LO(`zone cleanly merged into "${res.took[0]}"`);
-    } else if(res.mode==='partial'){
-      LO(`zone split across ${res.took.length} neighbours:`);
-      res.took.forEach(t=>LD(`  ${t} absorbed a sub-region`));
+
+    if (res.mode === 'clean') {
+      LO(`zone cleanly merged into "${res.took}"`);
+    } else if (res.mode === 'partial') {
+      LO(`zone split across ${res.took.length} neighbour${res.took.length!==1?'s':''}`);
+      res.took.forEach(t => LD(`${t} absorbed a sub-region`));
     } else {
-      LW('no adjacent neighbours — zone unassigned');
+      LW('no geometric neighbours found — zone coverage gap');
+      if (res.dataAt) LW(`data handed to "${res.dataAt}" to prevent loss`);
     }
-    LO(`network now has ${net.size()} nodes`);
-    if(sel===id) sel=null;
+
+    LO(`network size: ${net.size()}`);
+    if (sel===id) sel=null;
     draw(); closeModal();
   });
 }
 
 function showStore() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   showM('Store Key/Value', `
     <div class="field"><label>Key</label><input id="mk" placeholder="user:101"></div>
     <div class="field"><label>Value</label><input id="mv" placeholder="alice@example.com"></div>
   `, async () => {
     const k = document.getElementById('mk').value.trim();
     const v = document.getElementById('mv').value.trim();
-    if(!k){LE('key cannot be empty');return;}
+    if (!k) { LE('key cannot be empty'); return; }
     LC(`store  ${k} = "${v}"`);
-    const res = await net.store(k,v);
+    const res = await net.store(k, v);
     const hex = (await sha256h(k)).substring(0,16)+'...';
     const p   = await hashKey(k, net.d);
     LO(`stored at node "${res.at}"`);
@@ -998,20 +1128,20 @@ function showStore() {
 }
 
 function showBatchStore() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   showM('Batch Store', `
     <div class="field"><label>key=value pairs (one per line)</label>
     <textarea id="mbatch" placeholder="user:101=alice@example.com&#10;config:db=postgres://prod:5432&#10;session:xyz=uid=42&ttl=3600"></textarea></div>
   `, async () => {
     const lines = document.getElementById('mbatch').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    if(!lines.length){LE('nothing to store');return;}
+    if (!lines.length) { LE('nothing to store'); return; }
     LC(`batch store — ${lines.length} pairs`);
     closeModal();
-    for(const line of lines){
-      const eq=line.indexOf('=');
-      if(eq<1){LE(`bad format: "${line}"`);continue;}
+    for (const line of lines) {
+      const eq = line.indexOf('=');
+      if (eq<1) { LE(`bad format: "${line}"`); continue; }
       const k=line.substring(0,eq).trim(), v=line.substring(eq+1).trim();
-      const res = await net.store(k,v);
+      const res = await net.store(k, v);
       LD(`${k.padEnd(22)} -> ${res.at.padEnd(12)} ok`);
       await new Promise(r=>setTimeout(r,15));
     }
@@ -1020,35 +1150,35 @@ function showBatchStore() {
 }
 
 function showLookup() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   showM('Lookup Key', `
     <div class="field"><label>Key</label><input id="mlk" placeholder="user:101"></div>
   `, async () => {
     const k = document.getElementById('mlk').value.trim();
-    if(!k){LE('key cannot be empty');return;}
+    if (!k) { LE('key cannot be empty'); return; }
     LC(`lookup  ${k}`);
     const res = await net.lookup(k);
-    if(res.found) LHIT(`${k.padEnd(22)} = "${res.val}"  (at ${res.at})`);
+    if (res.found) LHIT(`${k.padEnd(22)} = "${res.val}"  (at ${res.at})`);
     else LMISS(k);
     closeModal();
   });
 }
 
 function showBatchLookup() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   showM('Batch Lookup', `
     <div class="field"><label>Keys (one per line)</label>
     <textarea id="mblk" placeholder="user:101&#10;config:db&#10;nonexistent"></textarea></div>
   `, async () => {
     const keys = document.getElementById('mblk').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    if(!keys.length){LE('no keys');return;}
+    if (!keys.length) { LE('no keys'); return; }
     LC(`batch lookup — ${keys.length} keys`);
     closeModal();
     let hits=0, miss=0;
-    for(const k of keys){
+    for (const k of keys) {
       const res = await net.lookup(k);
-      if(res.found){LHIT(`${k.padEnd(22)} = "${res.val}"`);hits++;}
-      else{LMISS(k.padEnd(22));miss++;}
+      if (res.found) { LHIT(`${k.padEnd(22)} = "${res.val}"`); hits++; }
+      else           { LMISS(k.padEnd(22)); miss++; }
       await new Promise(r=>setTimeout(r,15));
     }
     LD(`${hits} hit${hits!==1?'s':''}, ${miss} miss${miss!==1?'es':''}`);
@@ -1056,28 +1186,28 @@ function showBatchLookup() {
 }
 
 function doSummary() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   LH('── NETWORK SUMMARY ─────────────────────');
   LD(`${net.d}D network with ${net.size()} nodes`);
   net.nodes().forEach(n =>
     LD(`${n.id.padEnd(14)} ${n.zone.str().padEnd(36)} nbrs=${n.rt.size()} data=${n.store.size()}`)
   );
-  const v = net.totalVol();
+  const v  = net.totalVol();
   const ok = Math.abs(v-1) < 0.0001;
   lg(ok?'log-ok':'log-err', `  total coverage: ${v.toFixed(6)}${ok?' (OK)':' (ERROR — overlap or gap!)'}`);
 }
 
 function doPartition() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   LC('verify partitioning (1000 random points)');
-  const{ok,N,pct} = net.verify(1000);
+  const {ok,N,pct} = net.verify(1000);
   const pass = parseFloat(pct) >= 99;
-  if(pass) LO(`partitioning: ${ok}/${N} correct (${pct}%)  PASS`);
-  else     LE(`partitioning: ${ok}/${N} correct (${pct}%)  FAIL`);
+  if (pass) LO(`partitioning: ${ok}/${N} correct (${pct}%)  PASS`);
+  else      LE(`partitioning: ${ok}/${N} correct (${pct}%)  FAIL`);
 }
 
 function doMetrics() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   LH('── NODE METRICS ─────────────────────────');
   net.nodes().forEach(n =>
     LD(`${n.id.padEnd(12)} nbrs=${n.rt.size()} keys=${n.store.size()} sent=${n.sent} rcvd=${n.rcvd} avgHops=${n.avgH()}`)
@@ -1085,18 +1215,18 @@ function doMetrics() {
 }
 
 function showHashMap() {
-  if(!net){LE('no network');return;}
+  if (!net) { LE('no network'); return; }
   showM('Key → Coordinate Mapping', `
     <div class="field"><label>Keys to hash (one per line)</label>
     <textarea id="mhk" placeholder="user:101&#10;config:db&#10;session:xyz"></textarea></div>
   `, async () => {
     const keys = document.getElementById('mhk').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    if(!keys.length){LE('no keys');return;}
+    if (!keys.length) { LE('no keys'); return; }
     LC(`hash map — ${keys.length} keys`);
     closeModal();
-    for(const k of keys){
-      const hex = (await sha256h(k)).substring(0,16)+'...';
-      const p   = await hashKey(k, net.d);
+    for (const k of keys) {
+      const hex   = (await sha256h(k)).substring(0,16)+'...';
+      const p     = await hashKey(k, net.d);
       const owner = await net.owner(k);
       LD(`${k.padEnd(20)} sha256=${hex} -> (${p.map(x=>x.toFixed(4)).join(', ')})  node=<b style="color:${owner!=='??'?nc(owner):'#888'}">${owner}</b>`);
       await new Promise(r=>setTimeout(r,15));
@@ -1117,6 +1247,7 @@ LI('  4. Use "Lookup" to retrieve them');
 LI('  5. Try "- Remove Node" to see graceful zone handoff');
 LI('');
 LI('Zone map only shows 2D networks correctly.');
+LI('');
 upStatus();
 </script>
 </body>
