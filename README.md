@@ -152,3 +152,9 @@ Checking partitioning... OK
 ```
 
 After adding four nodes the root has been split four times, each node owns one quadrant, and the partitioning check confirms no gaps or overlaps across 2000 random sample points.
+
+## Future Word
+
+```
+Fix overlapping visual bug in the browser version
+Simulate 3D version too
